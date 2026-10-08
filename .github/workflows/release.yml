@@ -1,15 +1,7 @@
 name: Release
 
-# iOS-only build/release pipeline.
-# Every push to main builds an unsigned IPA and uploads it as an Actions artifact.
-# Pushing a v* tag additionally creates a GitHub Release with the IPA attached.
-# Android/APK builds are intentionally not produced by this workflow.
-# Manual build trigger: push to main.
-
 on:
   push:
-    branches:
-      - main
     tags:
       - 'v*'
   workflow_dispatch:
@@ -22,76 +14,59 @@ jobs:
     name: Build iOS IPA
     runs-on: macos-latest
     timeout-minutes: 60
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Accept Xcode license
         run: sudo xcodebuild -license accept || true
-
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-
       - name: Fetch dependencies
         run: |
           flutter config --enable-ios
           flutter clean
           flutter pub get
-
       - name: Run tests
         run: flutter test $(find test -name '*_test.dart' ! -name 'widget_test.dart' | sort)
-
       - name: Compile libsmb2
         run: |
           chmod +x ios/libsmb2_build.sh
           ios/libsmb2_build.sh
-
       - name: Build unsigned IPA
         env:
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-          OPENSUBTITLES_API_KEY: ${{ secrets.OPENSUBTITLES_API_KEY }}
-          SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
+          TMDB_API_KEY: '${{ secrets.TMDB_API_KEY }}'
+          OPENSUBTITLES_API_KEY: '${{ secrets.OPENSUBTITLES_API_KEY }}'
+          SIMKL_CLIENT_ID: '${{ secrets.SIMKL_CLIENT_ID }}'
         run: |
           set -euo pipefail
-
           flutter build ios --release --no-codesign \
             --dart-define=PAYWALL_ENABLED=false \
             --dart-define=TMDB_API_KEY="${TMDB_API_KEY:-}" \
             --dart-define=OPENSUBTITLES_API_KEY="${OPENSUBTITLES_API_KEY:-}" \
             --dart-define=SIMKL_CLIENT_ID="${SIMKL_CLIENT_ID:-}"
-
-          VERSION="$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)"
-
+          VERSION="$(awk '/^version:/ {print $2; exit}' pubspec.yaml | cut -d+ -f1)
           rm -rf Payload
           mkdir -p Payload
           cp -R build/ios/iphoneos/Runner.app Payload/Runner.app
-
           IPA="DreamPlayer-${VERSION}.ipa"
           zip -ry "$IPA" Payload
-
           echo "IPA=$IPA" >> "$GITHUB_ENV"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: DreamPlayer-IPA
-          path: ${{ env.IPA }}
-
+          path: '${{ env.IPA }}'
       - name: Build release body
-        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-
-          awk -v ver="$VERSION" '
-            $0 ~ "^## " ver "$" { insec=1; next }
-            insec && /^## / { exit }
-            insec { print }
-          ' CHANGELOG.md > /tmp/changelog-entry.md
-
+          if [ -f CHANGELOG.md ]; then
+            awk -v ver="$VERSION" '$0 ~ "^## " ver "$" { insec=1; next } insec && /^## / { exit } insec { print }' CHANGELOG.md > /tmp/changelog-entry.md
+          else
+            : > /tmp/changelog-entry.md
+          fi
           {
             echo "## DreamPlayer $VERSION"
             echo
@@ -103,11 +78,9 @@ jobs:
             echo "- Premium/paywall is disabled in this fork."
             echo "- Android/APK builds are intentionally not included."
           } > /tmp/release-body.md
-
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           body_path: /tmp/release-body.md
           generate_release_notes: true
-          files: ${{ env.IPA }}
+          files: '${{ env.IPA }}'
