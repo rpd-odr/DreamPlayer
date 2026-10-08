@@ -58,6 +58,7 @@ jobs:
           set -euo pipefail
 
           flutter build ios --release --no-codesign \
+            --dart-define=PAYWALL_ENABLED=false \
             --dart-define=TMDB_API_KEY="${TMDB_API_KEY:-}" \
             --dart-define=OPENSUBTITLES_API_KEY="${OPENSUBTITLES_API_KEY:-}" \
             --dart-define=SIMKL_CLIENT_ID="${SIMKL_CLIENT_ID:-}"
@@ -99,6 +100,7 @@ jobs:
             echo "### iOS"
             echo
             echo "- Unsigned IPA built automatically by GitHub Actions."
+            echo "- Premium/paywall is disabled in this fork."
             echo "- Android/APK builds are intentionally not included."
           } > /tmp/release-body.md
 
