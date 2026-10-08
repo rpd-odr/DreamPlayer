@@ -1,0 +1,63 @@
+name: Sync upstream
+
+# Keeps this fork's main branch aligned with the upstream project.
+# The fork-specific iOS-only release workflow is restored after syncing.
+# After a successful sync, the IPA build workflow is dispatched manually.
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  sync:
+    name: Sync upstream main
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Sync from upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream https://github.com/mangeshghodke/DreamPlayer.git
+          git fetch upstream main
+
+          cp .github/workflows/release.yml /tmp/release.yml
+
+          git reset --hard upstream/main
+
+          mkdir -p .github/workflows
+          cp /tmp/release.yml .github/workflows/release.yml
+
+          if git diff --quiet; then
+            echo "SYNC_CHANGED=false" >> "$GITHUB_ENV"
+            echo "Already up to date."
+            exit 0
+          fi
+
+          git add -A
+          git commit -m "chore: sync with upstream"
+          git push origin main
+          echo "SYNC_CHANGED=true" >> "$GITHUB_ENV"
+
+      - name: Trigger IPA build
+        if: env.SYNC_CHANGED == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run release.yml --repo "${GITHUB_REPOSITORY}" --ref main
