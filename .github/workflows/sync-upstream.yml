@@ -68,6 +68,9 @@ jobs:
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
             echo "Origin tag $TAG already exists; using it."
           else
+            # Upstream sync may have imported the same tag into the local repo.
+            # Remove that local copy before creating the fork's tag.
+            git tag -d "$TAG" 2>/dev/null || true
             git tag "$TAG" HEAD
             git push origin "$TAG"
           fi
