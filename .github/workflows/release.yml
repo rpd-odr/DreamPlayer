@@ -1,12 +1,14 @@
 name: Release
 
-# iOS-only release pipeline.
-# Tag a version with: git tag v0.5.0 && git push origin v0.5.0
-# The release contains an unsigned IPA. Android/APK builds are intentionally
-# not produced by this workflow.
+# iOS-only build/release pipeline.
+# Every push to main builds an unsigned IPA and uploads it as an Actions artifact.
+# Pushing a v* tag additionally creates a GitHub Release with the IPA attached.
+# Android/APK builds are intentionally not produced by this workflow.
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
@@ -78,6 +80,7 @@ jobs:
           path: ${{ env.IPA }}
 
       - name: Build release body
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
 
@@ -99,6 +102,7 @@ jobs:
           } > /tmp/release-body.md
 
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           body_path: /tmp/release-body.md
