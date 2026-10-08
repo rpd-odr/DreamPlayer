@@ -58,12 +58,17 @@ jobs:
           else
             echo 'exists=false' >> "$GITHUB_OUTPUT"
           fi
-      - name: Create release tag
+      - name: Ensure release tag
         if: steps.release.outputs.exists == 'false'
         env:
           GH_TOKEN: '${{ github.token }}'
           TAG: 'v${{ steps.version.outputs.version }}'
         run: |
-          git tag "$TAG" HEAD
-          git push origin "$TAG"
+          set -euo pipefail
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists; using it."
+          else
+            git tag "$TAG" HEAD
+            git push origin "$TAG"
+          fi
           gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
