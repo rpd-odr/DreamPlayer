@@ -4,6 +4,7 @@ name: Release
 # Every push to main builds an unsigned IPA and uploads it as an Actions artifact.
 # Pushing a v* tag additionally creates a GitHub Release with the IPA attached.
 # Android/APK builds are intentionally not produced by this workflow.
+# Manual build trigger: push to main.
 
 on:
   push:
