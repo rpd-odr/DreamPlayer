@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: upstream-sync
@@ -58,7 +59,9 @@ jobs:
       - name: Create release tag
         if: env.changed == 'true' && steps.release.outputs.exists == 'false'
         env:
+          GH_TOKEN: '${{ github.token }}'
           TAG: 'v${{ steps.version.outputs.version }}'
         run: |
           git tag "$TAG" HEAD
           git push origin "$TAG"
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
