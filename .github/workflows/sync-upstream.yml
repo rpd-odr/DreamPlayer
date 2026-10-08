@@ -1,63 +1,73 @@
-name: Sync upstream
-
-# Keeps this fork's main branch aligned with the upstream project.
-# The fork-specific iOS-only release workflow is restored after syncing.
-# After a successful sync, the IPA build workflow is dispatched manually.
+name: Sync upstream and release
 
 on:
   schedule:
-    - cron: '17 4 * * *'
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
-  actions: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: true
 
 jobs:
   sync:
-    name: Sync upstream main
+    name: Sync upstream and tag new version
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout fork
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: main
 
-      - name: Sync from upstream
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Sync upstream
         run: |
           set -euo pipefail
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git remote add upstream https://github.com/mangeshghodke/DreamPlayer.git
-          git fetch upstream main
-
+          git fetch upstream main --tags
           cp .github/workflows/release.yml /tmp/release.yml
-
+          cp .github/workflows/sync-upstream.yml /tmp/sync-upstream.yml
+          cp README.md /tmp/README.md
+          OLD_VERSION="$(awk '/^version:/ {print $2; exit}' pubspec.yaml | cut -d+ -f1 || true)"
           git reset --hard upstream/main
-
           mkdir -p .github/workflows
           cp /tmp/release.yml .github/workflows/release.yml
-
-          if git diff --quiet; then
-            echo "SYNC_CHANGED=false" >> "$GITHUB_ENV"
-            echo "Already up to date."
+          cp /tmp/sync-upstream.yml .github/workflows/sync-upstream.yml
+          cp /tmp/README.md README.md
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_ENV"
             exit 0
           fi
-
-          git add -A
-          git commit -m "chore: sync with upstream"
+          git commit -m 'chore: sync with upstream'
           git push origin main
-          echo "SYNC_CHANGED=true" >> "$GITHUB_ENV"
+          NEW_VERSION="$(awk '/^version:/ {print $2; exit}' pubspec.yaml | cut -d+ -f1)
+          echo "changed=true" >> "$GITHUB_ENV"
+          echo "old_version=$OLD_VERSION" >> "$GITHUB_ENV"
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_ENV"
 
-      - name: Trigger IPA build
-        if: env.SYNC_CHANGED == 'true'
+      - name: Check release
+        if: env.changed == 'true'
+        id: release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: '${{ github.token }}'
+          TAG: 'v${{ env.new_version }}'
         run: |
-          gh workflow run release.yml --repo "${GITHUB_REPOSITORY}" --ref main
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create release tag
+        if: env.changed == 'true' && steps.release.outputs.exists == 'false'
+        env:
+          TAG: 'v${{ env.new_version }}'
+        run: |
+          git fetch origin main
+          git tag "$TAG" origin/main
+          git push origin "$TAG"
